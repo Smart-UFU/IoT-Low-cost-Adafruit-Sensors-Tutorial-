@@ -195,10 +195,32 @@
 
     currentMode = msg.modes[0];
     setActiveModeTab(currentMode);
+
+    // The submode tabs always start with "log" (With Reference) marked
+    // active in the HTML/UI, regardless of what a *previous* connection may
+    // have left `currentSubmode` as. Reset the JS state to match what the
+    // screen actually shows so the sync below sends the right value.
+    currentSubmode = 'log';
+    submodeTabs.forEach(t => t.classList.toggle('active', t.dataset.sub === currentSubmode));
+    referenceValid = false;
+    refStatus.classList.add('hidden');
+
     updateModeUI();
 
     app.classList.remove('hidden');
     showToast('Sensor connected: ' + msg.sensor, 'success');
+
+    // IMPORTANT — this fixes the "first measurement uses the wrong mode"
+    // bug: the board boots with its OWN hardcoded defaults (mode =
+    // reflectance, submode = raw — see Measurement.cpp), which do not
+    // necessarily match the mode/submode tab shown as "selected" above.
+    // Without telling the board explicitly, the first measurement silently
+    // runs using the board's default instead of what's highlighted on
+    // screen, until the user re-clicks a tab (which is what finally sends
+    // the command). Sync the board to the UI's selection right away so the
+    // very first measurement after connecting is already correct.
+    sendCommand({ cmd: 'set_mode', mode: currentMode });
+    sendCommand({ cmd: 'set_submode', sub: currentSubmode });
   }
 
   // ── Channels ──

@@ -20,6 +20,16 @@
   constexpr uint8_t INFO_MAX_TIME_PRESETS = 0;
   constexpr uint8_t INFO_MAX_EXTRA_PARAMS = 0;
   constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 0;
+#elif defined(SENSOR_TCS3448)
+  // Same shape as AS7343 on purpose: 13 channels, 13 discrete gain steps,
+  // 2 formula time params (ATIME/ASTEP), no presets, no extra params — see
+  // sensors/TCS3448.h for why (register-compatible "refresh" of AS7343).
+  constexpr uint8_t INFO_MAX_CHANNELS = 13;
+  constexpr uint8_t INFO_MAX_GAINS    = 13;
+  constexpr uint8_t INFO_MAX_TIME_PARAMS  = 2;
+  constexpr uint8_t INFO_MAX_TIME_PRESETS = 0;
+  constexpr uint8_t INFO_MAX_EXTRA_PARAMS = 0;
+  constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 0;
 #elif defined(SENSOR_AS7341)
   constexpr uint8_t INFO_MAX_CHANNELS = 8;
   constexpr uint8_t INFO_MAX_GAINS    = 11;
@@ -84,6 +94,11 @@
   constexpr uint8_t INFO_MAX_EXTRA_PARAMS = 3;
   constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 6;
 #endif
+
+// NOTE: there used to be an INFO_DOC_CAPACITY here sizing a StaticJsonDocument
+// for the whole "info" response. sendInfo() now streams that response
+// directly to Serial instead (see below) — building it as one in-memory
+// document was what overflowed the stack on RAM-tight sensors like AS7262.
 
 constexpr size_t CMD_DOC_CAPACITY =
     JSON_OBJECT_SIZE(6) + JSON_ARRAY_SIZE(INFO_MAX_CHANNELS) + JSON_OBJECT_SIZE(INFO_MAX_TIME_PARAMS) + 64;
