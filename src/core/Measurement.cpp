@@ -102,6 +102,11 @@ bool run(bool isReference, ProgressCallback onProgress, float* avgOut, bool* use
     if (onProgress) onProgress((millis() - startTime) / 1000.0f, sampleCount, sample);
   }
 
+  if (sampleCount == 0) {
+    g_error = F("Sensor read failed: no valid samples. Check wiring/address.");
+    return false;
+  }
+
   for (uint8_t i = 0; i < n && i < MAX_CHANNELS; i++) {
     if (!selectedChannels[i]) continue;
     float avg = (count[i] > 0) ? (sum[i] / count[i]) : 0.0f;

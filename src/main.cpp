@@ -24,6 +24,27 @@ constexpr uint8_t LINE_BUFFER_SIZE = 96;
 char    lineBuffer[LINE_BUFFER_SIZE];
 uint8_t lineLen = 0;
 
+// I2C diagnostics: lines beginning with # are informational and are ignored
+// by the browser interface (it only parses JSON lines).
+// NOTE: no Serial.printf here — AVR (Arduino Uno) has no Serial.printf, and
+// this function is compiled for the *_uno environments too.
+static uint8_t scanI2C() {
+  uint8_t found = 0;
+  Serial.println(F("# I2C scan (7-bit addresses):"));
+  for (uint8_t address = 0x08; address < 0x78; ++address) {
+    Wire.beginTransmission(address);
+    uint8_t error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print(F("# I2C ACK at 0x"));
+      if (address < 0x10) Serial.print('0');
+      Serial.println(address, HEX);
+      ++found;
+    }
+  }
+  if (!found) Serial.println(F("# I2C: no ACK. Check 3V/GND, SDA/SCL and power."));
+  return found;
+}
+
 void setup() {
   Serial.begin(115200);
   unsigned long t0 = millis();
@@ -34,13 +55,51 @@ void setup() {
   digitalWrite(PIN_LED_ABSORBANCE, LOW);
   digitalWrite(PIN_LED_FLUORESCENCE, LOW);
 
+#if defined(ARDUINO_ARCH_ESP32)
+  // On the Reverse TFT Feather the STEMMA QT / TFT power rail must be high.
+  // The Arduino core normally enables it, but explicit initialization makes
+  // this firmware resilient to board-package versions.
+  #if defined(TFT_I2C_POWER)
+    pinMode(TFT_I2C_POWER, OUTPUT);
+    // Power-cycle the STEMMA QT rail so a sensor stuck from a previous run restarts clean.
+    digitalWrite(TFT_I2C_POWER, LOW);
+    delay(100);
+    digitalWrite(TFT_I2C_POWER, HIGH);
+    delay(200);
+    Serial.print(F("# TFT_I2C_POWER pin="));
+    Serial.print((int)TFT_I2C_POWER);
+    Serial.print(F(" level="));
+    Serial.println(digitalRead(TFT_I2C_POWER));
+    Serial.println(F("# TFT_I2C_POWER enabled"));
+  #else
+    Serial.println(F("# TFT_I2C_POWER not defined by selected board variant"));
+  #endif
+  // Use the board variant's actual SDA/SCL definitions, not generic 21/22.
+  bool i2cOK = Wire.begin(SDA, SCL);
+  Serial.print(F("# I2C pins SDA="));
+  Serial.print((int)SDA);
+  Serial.print(F(" SCL="));
+  Serial.print((int)SCL);
+  Serial.println(i2cOK ? F(", begin=OK") : F(", begin=FAILED"));
+#else
   Wire.begin();
+#endif
+  Wire.setClock(100000); // Conservative speed for jumpers/long cables.
+  delay(100);
+  scanI2C(); // MAX17048 (often 0x36) may be visible even with no sensor.
 
-  if (!SensorManager::get().begin()) {
+  bool sensorReady = SensorManager::get().begin();
+  if (!sensorReady) {
+    Serial.println(F("# Driver initialization failed; retrying once..."));
+    delay(300);
+    scanI2C(); // second scan: shows whether the device appeared late
+    sensorReady = SensorManager::get().begin();
+  }
+  if (!sensorReady) {
     // Keep Serial alive so the browser sees why nothing else works.
     while (true) {
       if (Serial.available()) Serial.read();
-      Serial.println(F("{\"evt\":\"error\",\"msg\":\"Sensor not found. Check I2C wiring.\"}"));
+      Serial.println(F("{\"evt\":\"error\",\"msg\":\"Sensor driver initialization failed. Check I2C scan and selected firmware.\"}"));
       delay(1000);
     }
   }

@@ -155,13 +155,23 @@
     let msg;
     try { msg = JSON.parse(line); } catch (e) { console.log('[SERIAL RX] JSON parse FAILED:', e.message); return; } // TEMP DEBUG
 
-    switch (msg.evt) {
-      case 'info':      onInfo(msg); break;
-      case 'ack':        onAck(msg); break;
-      case 'progress':   onProgress(msg); break;
-      case 'ref_saved':  onRefSaved(msg); break;
-      case 'result':     onResult(msg); break;
-      case 'error':      showToast(msg.msg || 'Device error', 'error'); break;
+    try {
+      switch (msg.evt) {
+        case 'info':      onInfo(msg); break;
+        case 'ack':        onAck(msg); break;
+        case 'progress':   onProgress(msg); break;
+        case 'ref_saved':  onRefSaved(msg); break;
+        case 'result':     onResult(msg); break;
+        case 'error':
+          // An error while measuring means no "result" will ever arrive, so
+          // leave the measuring state instead of spinning forever.
+          if (isMeasuring) setMeasuringUI(false);
+          showToast(msg.msg || 'Device error', 'error');
+          break;
+      }
+    } catch (e) {
+      console.error('Error handling', msg.evt, e);
+      if (isMeasuring && (msg.evt === 'result' || msg.evt === 'ref_saved')) setMeasuringUI(false);
     }
   }
 
@@ -304,6 +314,10 @@
       return;
     }
     setMeasuringUI(true, 'Measuring reference...');
+    // Always push the current channel selection first: the firmware starts with
+    // none selected and would answer "No channel selected." otherwise.
+    await sendCommand({ cmd: 'set_channels', channels: Array.from(selectedChannels) });
+    await new Promise(r => setTimeout(r, 150)); // Uno has a 64-byte serial RX buffer: don't stack commands
     await sendCommand({ cmd: 'measure_ref' });
   });
 
@@ -503,11 +517,26 @@
       return;
     }
     setMeasuringUI(true, 'Measuring sample...');
+    await sendCommand({ cmd: 'set_channels', channels: Array.from(selectedChannels) });
+    await new Promise(r => setTimeout(r, 150)); // Uno has a 64-byte serial RX buffer: don't stack commands
     await sendCommand({ cmd: 'measure' });
   });
 
+  // Safety net: a measurement lasts 10 s on the device. If nothing at all
+  // (no progress, result or error) arrives for 20 s, give up and unlock the UI.
+  let measureWatchdog = null;
+  function armMeasureWatchdog() {
+    clearTimeout(measureWatchdog);
+    measureWatchdog = setTimeout(() => {
+      if (!isMeasuring) return;
+      setMeasuringUI(false);
+      showToast('No response from the board during the measurement. Check the connection and try again.', 'error');
+    }, 20000);
+  }
+
   function setMeasuringUI(active, label) {
     isMeasuring = active;
+    if (active) armMeasureWatchdog(); else clearTimeout(measureWatchdog);
     btnMeasure.disabled = active;
     btnRef.disabled = active;
     btnApplyConfig.disabled = active;
@@ -520,13 +549,14 @@
   }
 
   function onProgress(msg) {
+    if (isMeasuring) armMeasureWatchdog();
     const pct = Math.min((msg.t / 10.0) * 100, 100);
     progressBar.style.width = pct + '%';
     progressLive.innerHTML = '';
     Object.keys(msg.data || {}).forEach(chId => {
       const ch = sensorInfo.channels.find(c => String(c.id) === chId);
       const span = document.createElement('span');
-      span.textContent = (ch ? ch.name : chId) + ': ' + msg.data[chId].toFixed(3);
+      span.textContent = (ch ? ch.name : chId) + ': ' + (typeof msg.data[chId] === 'number' ? msg.data[chId].toFixed(3) : '--');
       progressLive.appendChild(span);
     });
   }

@@ -29,7 +29,7 @@ class TCS34725Sensor : public SensorBase {
   // The onboard LED is only on/off — no current control, unlike
   // AS7341/AS7343/AS7262. IMPORTANT: unlike those sensors, this LED is NOT
   // driven through I2C. The Adafruit breakout's LED pin must be wired to a
-  // GPIO (pin 7, same on every board in this series) and toggled directly —
+  // GPIO (pin 9 on ESP32-S3, pin 7 on Uno) and toggled directly —
   // see .cpp for why setInterrupt()/INT-pin wiring isn't used instead.
   LedType ledType() const override { return LedType::LED_BINARY; }
   void setLedOn(bool on) override;
@@ -41,5 +41,12 @@ class TCS34725Sensor : public SensorBase {
 
   // Physical GPIO driving the onboard LED directly (see .cpp) — same pin
   // number on every board in this series (ESP32-S3 Feather or Arduino Uno).
+  // On the Feather ESP32-S3 Reverse TFT, GPIO 7 is TFT_I2C_POWER (the switch
+  // that powers the STEMMA QT / I2C rail), so driving it LOW here would cut
+  // power to the sensor itself. Use GPIO 9 (D9) on ESP32 boards instead.
+#if defined(ARDUINO_ARCH_ESP32)
+  static constexpr uint8_t PIN_LED_INTERNAL = 9;
+#else
   static constexpr uint8_t PIN_LED_INTERNAL = 7;
+#endif
 };
