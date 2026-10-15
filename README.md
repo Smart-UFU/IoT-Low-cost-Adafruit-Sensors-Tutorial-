@@ -32,183 +32,6 @@ No Wi-Fi anywhere. The browser talks to the board over USB using the
 **Web Serial API**, so the exact same firmware/webpage pair works on an
 ESP32-S3 Feather or a plain Arduino Uno.
 
-## 🔰 Installation Tutorial (Beginner-Friendly, No Command Line Needed)
-
-This section assumes **zero prior experience** with VS Code, PlatformIO, or
-Arduino-style boards. It's written as a literal click-by-click walkthrough.
-If you're already comfortable with PlatformIO, skip ahead to the "How to
-run it" quick-reference section below instead — this one's deliberately
-slow and detailed.
-
-### Step 1 — Install Visual Studio Code
-
-1. Go to **https://code.visualstudio.com** in your browser.
-2. Click the big blue **Download** button. The site auto-detects your
-   operating system (Windows / Mac / Linux), so you usually don't need to
-   pick anything.
-3. Open the downloaded installer and click through it with the default
-   options (Next → Next → Install → Finish). On Windows, it's fine to leave
-   every checkbox at its default.
-4. Launch VS Code once it finishes installing, just to confirm it opens.
-   You'll see a mostly-empty window with a row of icons down the left edge
-   — that's the **sidebar**, and you'll use it a lot below.
-
-### Step 2 — Install the PlatformIO extension
-
-PlatformIO is what teaches VS Code how to build and upload firmware for
-these boards — VS Code can't do it on its own.
-
-1. In the left sidebar, click the **Extensions** icon (it looks like four
-   small squares, with one slightly detached — usually the 5th icon down).
-2. A search box appears at the top. Type **PlatformIO IDE**.
-3. The correct result is called **"PlatformIO IDE"**, published by
-   **PlatformIO**, with a little alien-head logo. Click the blue
-   **Install** button on it.
-4. Wait — this takes a minute or two and downloads quite a bit in the
-   background. You'll see a progress notification in the bottom-right
-   corner. Don't close VS Code while it's working.
-5. When it finishes, VS Code will ask you to **reload the window** (or it
-   will just do it automatically). Let it reload.
-6. After the reload, look at the sidebar again — you should now see a new
-   icon that looks like an **alien head** 👽. That's the PlatformIO icon.
-   If you see it, the extension installed correctly.
-
-### Step 3 — Get this project onto your computer
-
-If someone sent you this project as a **.zip file**:
-
-1. Find the `.zip` file in your Downloads folder (or wherever you saved
-   it).
-2. Right-click it and choose **Extract All...** (Windows) or double-click
-   it (Mac) to unzip it. Remember which folder you extracted it to — you'll
-   need to find it again in Step 4.
-
-If you're getting it from a **Git repository** instead: clone it however
-you normally would (or just download it as a `.zip` from the repository's
-"Code" button and follow the steps above).
-
-### Step 4 — Open the project in VS Code
-
-1. In VS Code, go to the top menu: **File → Open Folder...**
-   (on Mac: **File → Open...**).
-2. Browse to the folder you extracted in Step 3 — the one that directly
-   contains `platformio.ini` — and select it, then click **Select Folder**
-   (Windows) or **Open** (Mac).
-3. VS Code will reload with the project's file list now visible in the
-   sidebar (icon that looks like two overlapping pages, usually the very
-   top one).
-4. Because this folder contains a `platformio.ini` file, PlatformIO
-   recognizes it automatically and starts initializing in the background —
-   you may see a notification like "PlatformIO: Project Initialization" or
-   a spinning icon in the bottom status bar. **Just wait for this to
-   finish** before doing anything else; it can take a little while the
-   very first time.
-
-### Step 5 — Connect your board
-
-1. Plug your sensor board (ESP32-S3 Feather or Arduino Uno) into your
-   computer with a USB cable. Use a cable you know carries data, not a
-   charge-only cable — if the board doesn't show up anywhere later, this is
-   the first thing to double check.
-2. You don't need to manually find or select which USB port it's on —
-   PlatformIO auto-detects it at upload time in almost all cases.
-
-### Step 6 — Pick which sensor + board you're building for
-
-This project supports 11 different sensor chips, each on 2 possible
-boards, and every combination is its own "environment" (e.g.
-`as7341_esp32s3`, `tcs3448_uno`). You need to tell PlatformIO which one you
-want.
-
-1. Look at the very **bottom of the VS Code window** — there's a thin blue
-   status bar that PlatformIO adds. It has several small icons:
-   a house 🏠, a checkmark ✓, a right-pointing arrow →, a trash can 🗑,
-   a plug 🔌, and — importantly — some **text showing an environment
-   name** (e.g. `Default (as7341_esp32s3)`) usually toward the left/middle
-   of that bar.
-2. Click on that **environment name text**. A list pops up at the top of
-   the window showing every environment defined in `platformio.ini`
-   (`as7341_esp32s3`, `as7341_uno`, `as7343_esp32s3`, `tcs3448_esp32s3`,
-   `tcs3448_uno`, etc.).
-3. Click the one matching **your sensor chip** (printed on the small
-   breakout board you have) **and your microcontroller board** (ESP32-S3
-   Feather, or plain Arduino Uno). For example, if you have a TCS3448
-   breakout plugged into an ESP32-S3 Feather, choose `tcs3448_esp32s3`.
-4. That name now shows in the bottom status bar, confirming it's selected
-   for every action below.
-
-### Step 7 — Build the firmware
-
-1. Still in that same bottom blue status bar, click the **checkmark (✓)
-   icon**. This is "Build" — it compiles the firmware without uploading it
-   yet.
-2. A terminal panel opens at the bottom of the window and starts printing
-   a lot of text. The very first build for a given sensor can take a few
-   minutes, because PlatformIO is also downloading that sensor's vendor
-   library and the board toolchain in the background (you don't need to
-   have run any install script separately for this to work — building
-   triggers it automatically).
-3. Wait for it to finish. You're looking for a green line near the bottom
-   that says **`[SUCCESS]`**, along with `Took XX seconds`. If it instead
-   ends in red with `[FAILED]`, scroll up in that same terminal to read the
-   error — it's usually a missing/renamed library, which is worth reporting
-   back.
-
-### Step 8 — Upload the firmware to the board
-
-1. With the board still plugged in, click the **right-pointing arrow (→)
-   icon** in that same bottom status bar. This is "Upload" — it builds
-   (again, quickly, since it's already built) and then flashes the board.
-2. Watch the terminal again. You'll see it connect to the board, write the
-   firmware, and finish with another **`[SUCCESS]`** line.
-   - **Arduino Uno users:** if upload fails immediately, it's often because
-     something else (like the Arduino IDE's own Serial Monitor) is holding
-     the USB port open. Close any other program that might be talking to
-     the board and try again.
-   - **ESP32-S3 users:** most boards upload automatically. If it hangs
-     waiting to connect, check your board's documentation for whether it
-     needs a BOOT button held during upload — this varies by board vendor.
-3. Once you see `[SUCCESS]` for the upload, the firmware is live on the
-   board. You can unplug and replug the USB cable at this point if you
-   want to restart it fresh — it'll keep running the firmware you just
-   flashed even after VS Code is closed.
-
-### Step 9 — Open the web interface
-
-1. In VS Code's file sidebar, find the `web` folder, then find
-   `index.html` inside it.
-2. Right-click `index.html` and look for an option like **"Reveal in File
-   Explorer"** (Windows) or **"Reveal in Finder"** (Mac) — this opens your
-   normal file browser pointed right at that file.
-3. Double-click `index.html` there. It should open in your default
-   browser. **This step needs Chrome or Edge** — Firefox and Safari don't
-   support the Web Serial feature this project relies on, and it won't
-   work on a phone/tablet browser either.
-   - If it opens in the wrong browser, right-click the file instead and
-     choose **Open with → Google Chrome** (or Edge).
-4. On the page, click the **Connect via USB** button.
-5. Your browser shows a small popup listing available serial/USB devices —
-   click your board's entry, then click **Connect**.
-6. The page should now fill itself in automatically: sensor name, channel
-   list, gain options, integration time controls, and an LED control if
-   your sensor has one. If you see this, everything worked — you're ready
-   to take a measurement.
-
-### If something goes wrong
-
-- **Nothing shows up in the "Connect via USB" popup at all:** try a
-  different USB cable/port, and make sure Step 8's upload actually ended
-  in `[SUCCESS]`.
-- **The build (Step 7) fails on the very first try for a sensor:** this
-  usually means the download of that sensor's library is still in
-  progress or hit a network hiccup — try Build again once.
-- **The page connects but shows blank/wrong controls:** double-check you
-  picked the environment (Step 6) that actually matches the physical chip
-  on your breakout board, not a different sensor's environment.
-- Still stuck? The "How to run it" section right below covers the exact
-  same steps as command-line instructions, which sometimes surfaces a more
-  specific error message than the VS Code UI does.
-
 ## How to run it
 
 1. **First time only — install every sensor's libraries in one go:**
@@ -388,7 +211,7 @@ One JSON object per line (`\n`-terminated), both directions.
 | SDA / SCL | board's default I2C | every sensor |
 | Absorbance LED (180°) | **6** | fixed, same on every sensor/board |
 | Fluorescence LED (90°) | **5** | fixed, same on every sensor/board |
-| TCS34725's onboard LED | **7** | only this sensor — see "Particularities" below |
+| TCS34725's onboard LED | **9** (ESP32-S3) / **7** (Uno) | only this sensor — GPIO 7 is `TFT_I2C_POWER` on the Reverse TFT, so it can't be used there — see "Particularities" below |
 | Every other sensor's internal LED | — | driven through I2C (AS7341/AS7343/**TCS3448**/AS7262) or doesn't exist (photodiode sensors, **including APDS9960**) |
 
 ## Sensor particularities (why `SensorBase` looks the way it does)
@@ -399,7 +222,7 @@ One JSON object per line (`\n`-terminated), both directions.
 | AS7343 | 13 (405–855nm+Clear) | 13 discrete (0.5X–2048X) | ATIME×ASTEP formula | Continuous, 4–258mA (I2C) |
 | **TCS3448** | 13 (407–855nm+Clear) | 13 discrete (0.5X–2048X) | ATIME×ASTEP formula | Continuous, 4–258mA (I2C) |
 | AS7262 | 6 (450–650nm) | 4 discrete (1X–64X) | value×2.8ms formula | Discrete, 4 levels (I2C) |
-| TCS34725 | 4 raw + 2 derived (Temp, Lux) | 4 discrete (1X–60X) | 6 fixed presets | **Binary**, needs GPIO pin 7 (not I2C — see below) — **discontinued, see note at top** |
+| TCS34725 | 4 raw + 2 derived (Temp, Lux) | 4 discrete (1X–60X) | 6 fixed presets | **Binary**, needs a GPIO (9 on ESP32-S3, 7 on Uno; not I2C — see below) — **discontinued, see note at top** |
 | APDS9960 | 4 raw + 2 derived (Temp, Lux) | 4 discrete (1X–64X) | Direct-ms formula (~3–700ms) | **None** — onboard IR LED only serves proximity/gesture, unusable here |
 | BH1750 | 1 (Lux) | Continuous (MTreg 31–254) | 3 resolution presets | None |
 | LTR303 / LTR329 | 2 raw + 1 derived (Visible) | 6 discrete | 8 presets **+ Measurement Rate** (extra param) | None |
@@ -414,7 +237,7 @@ tabs reflect that automatically.
 `setInterrupt()` only toggles the onboard LED if you've soldered the
 breakout's LED pin to its INT pin — a fragile, optional hardware mod most
 builds won't have done. Instead, `TCS34725Sensor` drives the LED from a
-dedicated GPIO (**pin 7**, same on every board) using plain `digitalWrite`,
+dedicated GPIO (**pin 9** on the ESP32-S3 Reverse TFT, **pin 7** on Uno) using plain `digitalWrite`,
 following the exact same "on entering Reflectance, off leaving it" logic
 `core/Protocol.cpp` already applies generically to every LED type — no core
 changes were needed to support this.
@@ -642,7 +465,7 @@ registry name **does** keep the "Library" suffix (`Adafruit APDS9960
 Library`), confirmed the same way.
 
 Only **AS7341**'s version pin (`^1.4.2`) and the two universally-common
-dependencies (**ArduinoJson** `^6.21.5`, **Adafruit BusIO** `^1.16.1`) are
+dependencies (**ArduinoJson** `^6.21.5`; Adafruit BusIO is pulled in automatically by the Adafruit sensor libraries) are
 pinned to a specific version with reasonable confidence. Every other
 sensor's library is listed **without** a version pin on purpose — a wrong
 guessed pin actively breaks the build (PlatformIO refuses to "downgrade" to

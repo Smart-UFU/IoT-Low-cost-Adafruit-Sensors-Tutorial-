@@ -1,5 +1,6 @@
 #pragma once
 #include "SensorBase.h"
+#include <Wire.h>
 #include <BH1750.h>
 
 class BH1750Sensor : public SensorBase {
@@ -33,6 +34,7 @@ class BH1750Sensor : public SensorBase {
 
  private:
   BH1750 sensor_;
+  uint8_t addr_    = 0x23; // detected in begin() (0x23 or 0x5C)
   uint8_t modeIdx_ = 0; // CONTINUOUS_HIGH_RES_MODE
   byte    mtreg_   = 69;
 

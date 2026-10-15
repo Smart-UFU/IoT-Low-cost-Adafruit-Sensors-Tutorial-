@@ -107,7 +107,7 @@ constexpr size_t PROGRESS_DOC_CAPACITY =
     JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(INFO_MAX_CHANNELS) + 24;
 
 constexpr size_t RESULT_DOC_CAPACITY =
-    JSON_OBJECT_SIZE(7) + JSON_OBJECT_SIZE(INFO_MAX_CHANNELS) + 24;
+    JSON_OBJECT_SIZE(7) + JSON_OBJECT_SIZE(INFO_MAX_CHANNELS) + 64;
 
 constexpr size_t SMALL_DOC_CAPACITY = JSON_OBJECT_SIZE(3) + 32;
 
@@ -121,11 +121,14 @@ static void sendJson(JsonDocument& doc) {
   Serial.print('\n');
 }
 
+// Written straight to Serial instead of through a JSON document: ArduinoJson
+// copies flash strings into a small fixed pool, so any message longer than ~25
+// characters was silently dropped and the web page only showed "Device error".
+// (Messages must not contain quotes or backslashes.)
 static void sendError(const __FlashStringHelper* msg) {
-  StaticJsonDocument<SMALL_DOC_CAPACITY> doc;
-  doc["evt"] = F("error");
-  doc["msg"] = msg;
-  sendJson(doc);
+  Serial.print(F("{\"evt\":\"error\",\"msg\":\""));
+  if (msg) Serial.print(msg);
+  Serial.print(F("\"}\n"));
 }
 
 static void sendAck(const char* cmd, float tintMs = -1) {
@@ -330,20 +333,38 @@ void sendInfo() {
 // -----------------------------------------------------------------------------
 // Measurement progress -> "progress" event
 // -----------------------------------------------------------------------------
-static void onProgress(float elapsedSec, int sampleCount, const float* sampleValues) {
-  StaticJsonDocument<PROGRESS_DOC_CAPACITY> doc;
-  doc["evt"] = F("progress");
-  doc["t"]   = elapsedSec;
-  doc["n"]   = sampleCount;
-  JsonObject data = doc.createNestedObject("data");
+// Numbers are printed straight to Serial (no JsonDocument): on an Uno the 2 KB
+// of RAM is shared with the stack, and the old fixed-size documents were both
+// a stack-overflow risk and silently dropped channels (ArduinoJson copies the
+// "0".."13" keys into the same small pool).
+static void printNum(float v) {
+  if (isnan(v) || isinf(v)) Serial.print(F("null"));
+  else Serial.print(v, 6);
+}
 
-  char key[3];
+static void printDataObject(const float* values) {
+  Serial.print(F("\"data\":{"));
+  bool first = true;
   for (uint8_t i = 0; i < Measurement::MAX_CHANNELS; i++) {
     if (!Measurement::selectedChannels[i]) continue;
-    Utils::smallIndexKey(i, key);
-    data[key] = sampleValues[i];
+    if (!first) Serial.print(',');
+    first = false;
+    Serial.print('"');
+    Serial.print(i);
+    Serial.print(F("\":"));
+    printNum(values[i]);
   }
-  sendJson(doc);
+  Serial.print('}');
+}
+
+static void onProgress(float elapsedSec, int sampleCount, const float* sampleValues) {
+  Serial.print(F("{\"evt\":\"progress\",\"t\":"));
+  printNum(elapsedSec);
+  Serial.print(F(",\"n\":"));
+  Serial.print(sampleCount);
+  Serial.print(',');
+  printDataObject(sampleValues);
+  Serial.print(F("}\n"));
 }
 
 static void runAndSendMeasurement(bool isReference) {
@@ -357,30 +378,27 @@ static void runAndSendMeasurement(bool isReference) {
   }
 
   SensorBase& sensor = SensorManager::get();
-  StaticJsonDocument<RESULT_DOC_CAPACITY> doc;
-  doc["evt"] = isReference ? F("ref_saved") : F("result");
+  Serial.print(F("{\"evt\":\""));
+  Serial.print(isReference ? F("ref_saved") : F("result"));
+  Serial.print('"');
   if (!isReference) {
+    Serial.print(F(",\"mode\":\""));
     switch (Measurement::mode) {
-      case Measurement::Mode::REFLECTANCE:  doc["mode"] = F("reflectance");  break;
-      case Measurement::Mode::ABSORBANCE:   doc["mode"] = F("absorbance");   break;
-      case Measurement::Mode::FLUORESCENCE: doc["mode"] = F("fluorescence"); break;
+      case Measurement::Mode::REFLECTANCE:  Serial.print(F("reflectance"));  break;
+      case Measurement::Mode::ABSORBANCE:   Serial.print(F("absorbance"));   break;
+      case Measurement::Mode::FLUORESCENCE: Serial.print(F("fluorescence")); break;
     }
-    doc["sub"] = usedLog ? F("log") : F("raw");
+    Serial.print(F("\",\"sub\":\""));
+    Serial.print(usedLog ? F("log") : F("raw"));
+    Serial.print('"');
   }
-
-  JsonObject data = doc.createNestedObject("data");
-  char key[3];
-  for (uint8_t i = 0; i < Measurement::MAX_CHANNELS; i++) {
-    if (!Measurement::selectedChannels[i]) continue;
-    Utils::smallIndexKey(i, key);
-    data[key] = avg[i];
-  }
-
+  Serial.print(',');
+  printDataObject(avg);
   if (!isReference) {
-    doc["tint_ms"] = sensor.integrationTimeMs();
+    Serial.print(F(",\"tint_ms\":"));
+    printNum(sensor.integrationTimeMs());
   }
-
-  sendJson(doc);
+  Serial.print(F("}\n"));
 }
 
 // -----------------------------------------------------------------------------

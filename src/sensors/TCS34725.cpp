@@ -105,7 +105,7 @@ void TCS34725Sensor::setLedOn(bool on) {
   // The Adafruit_TCS34725 library's setInterrupt() only toggles the onboard
   // LED if you've soldered the breakout's LED pin to its INT pin — a fragile,
   // optional hardware mod most builds won't have. Instead we drive the LED
-  // pin directly from a dedicated GPIO (wire LED -> pin 7), the same
+  // pin directly from a dedicated GPIO (wire LED -> pin 9 on ESP32-S3, pin 7 on Uno), the same
   // approach already used for the fixed external LEDs on pins 5/6, and
   // toggled by the same generic "enter/leave Reflectance mode" logic in
   // core/Protocol.cpp — no core changes needed for this to work.
