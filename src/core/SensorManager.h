@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // Each PlatformIO environment in platformio.ini defines exactly one
 // SENSOR_xxx build flag (e.g. -D SENSOR_AS7341) and restricts
-// build_src_filter to that sensor's .cpp file only. That's what lets nine
+// build_src_filter to that sensor's .cpp file only. That's what lets eleven
 // completely different vendor libraries coexist in sensors/ without ever
 // being compiled together — only one is ever built into a given firmware.
 //
@@ -19,12 +19,18 @@
 #elif defined(SENSOR_AS7343)
   #include "../sensors/AS7343.h"
   using ActiveSensor = AS7343Sensor;
+#elif defined(SENSOR_TCS3448)
+  #include "../sensors/TCS3448.h"
+  using ActiveSensor = TCS3448Sensor;
 #elif defined(SENSOR_AS7262)
   #include "../sensors/AS7262.h"
   using ActiveSensor = AS7262Sensor;
 #elif defined(SENSOR_TCS34725)
   #include "../sensors/TCS34725.h"
   using ActiveSensor = TCS34725Sensor;
+#elif defined(SENSOR_APDS9960)
+  #include "../sensors/APDS9960.h"
+  using ActiveSensor = APDS9960Sensor;
 #elif defined(SENSOR_BH1750)
   #include "../sensors/BH1750.h"
   using ActiveSensor = BH1750Sensor;
