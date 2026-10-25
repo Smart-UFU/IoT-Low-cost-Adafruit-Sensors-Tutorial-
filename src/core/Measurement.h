@@ -23,6 +23,13 @@ extern bool    selectedChannels[MAX_CHANNELS];
 extern float   referenceValues[MAX_CHANNELS];
 extern bool    referenceValid;
 
+// Fingerprint of everything that changes the signal level (gain, integration
+// time, sensor extras, internal LED, mode). Protocol.cpp sets it right before
+// every run(); a reference stores the value it was taken with, and a log
+// (-log10 I/I0) measurement is REFUSED if it differs. This replaces "forget the
+// reference when something changes": going gain A -> B -> A is valid again.
+extern uint32_t configSignature;
+
 void setMode(Mode m);
 void setSubmode(Submode s);
 void clearChannelSelection();

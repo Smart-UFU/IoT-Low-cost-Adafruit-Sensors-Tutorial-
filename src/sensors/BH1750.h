@@ -20,11 +20,13 @@ class BH1750Sensor : public SensorBase {
   float gainContinuousMin() const override { return 31; }
   float gainContinuousMax() const override { return 254; }
   void setGainContinuous(float value) override;
+  float gainContinuousValue() const override { return (float)mtreg_; }
 
   // The resolution mode IS the integration time here (16ms low-res vs
   // 120ms high-res) — modeled as presets, not a formula.
   TimeType timeType() const override { return TimeType::TIME_PRESETS; }
   float integrationTimeMs() const override;
+  int16_t timePresetIndex() const override { return modeIdx_; }
   uint8_t timePresetCount() const override { return 3; }
   const __FlashStringHelper* timePresetLabel(uint8_t idx) const override;
   void setTimePreset(uint8_t idx) override;

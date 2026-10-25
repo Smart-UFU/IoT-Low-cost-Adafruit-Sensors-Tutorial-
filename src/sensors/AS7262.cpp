@@ -44,7 +44,7 @@ static const drv_led_current_limits DRV_LIMITS[4] = { LIMIT_12MA5, LIMIT_25MA, L
 
 bool AS7262Sensor::begin() {
   if (!sensor_.begin()) return false;
-  sensor_.setGain(GAIN_16X);
+  sensor_.setGain(GAIN_VALUES[gainIdx_]);
   sensor_.setIntegrationTime(itime_);
   sensor_.setConversionType(MODE_2); // continuous read of all 6 channels
   return true;
@@ -70,6 +70,7 @@ const __FlashStringHelper* AS7262Sensor::gainOptionLabel(uint8_t idx) const {
 }
 
 void AS7262Sensor::setGainIndex(uint8_t idx) {
+  gainIdx_ = idx;
   sensor_.setGain(GAIN_VALUES[idx]);
 }
 

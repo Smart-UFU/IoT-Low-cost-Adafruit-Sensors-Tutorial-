@@ -9,6 +9,10 @@ Submode submode       = Submode::RAW;
 bool    selectedChannels[MAX_CHANNELS] = { false };
 float   referenceValues[MAX_CHANNELS]  = { 0 };
 bool    referenceValid = false;
+uint32_t configSignature = 0;
+
+static uint32_t refSignature = 0;                    // configSignature of the stored reference
+static bool     refChannels[MAX_CHANNELS] = { false }; // channels the reference was measured on
 
 static const __FlashStringHelper* g_error = nullptr;
 
@@ -59,6 +63,23 @@ bool run(bool isReference, ProgressCallback onProgress, float* avgOut, bool* use
     g_error = F("Measure the reference first (log / -log10 submode).");
     return false;
   }
+  if (useLog) {
+    if (refSignature != configSignature) {
+      g_error = F("Gain, time, LED or extras changed since the reference. Measure the reference again.");
+      return false;
+    }
+    for (uint8_t i = 0; i < MAX_CHANNELS; i++) {
+      if (!selectedChannels[i]) continue;
+      if (!refChannels[i]) {
+        g_error = F("The reference does not cover a selected channel. Measure the reference again.");
+        return false;
+      }
+      if (referenceValues[i] <= 0.0f) {
+        g_error = F("Reference is zero on a selected channel. Raise gain/LED and measure it again.");
+        return false;
+      }
+    }
+  }
 
   const uint8_t n = sensor.channelCount();
 
@@ -66,6 +87,9 @@ bool run(bool isReference, ProgressCallback onProgress, float* avgOut, bool* use
   int   count[MAX_CHANNELS] = { 0 };
   float sample[MAX_CHANNELS];
 
+  // Samples read during the settling window are read (to flush stale data) but
+  // neither averaged nor counted — see SensorBase::settleMs().
+  const unsigned long settleMs = sensor.settleMs();
   unsigned long startTime  = millis();
   unsigned long lastSample = 0;
   int sampleCount = 0;
@@ -78,25 +102,21 @@ bool run(bool isReference, ProgressCallback onProgress, float* avgOut, bool* use
     lastSample = millis();
 
     if (!sensor.readChannels(sample)) continue;
+    if (millis() - startTime < settleMs) continue; // old-gain/old-time leftovers
     sampleCount++;
 
     for (uint8_t i = 0; i < n && i < MAX_CHANNELS; i++) {
       if (!selectedChannels[i]) continue;
 
-      float value;
-      if (useLog) {
-        float ref = referenceValues[i];
-        if (ref <= 0.0f) ref = 1.0f;
-        float r = sample[i];
-        if (r <= 0.0f) r = 1.0f;
-        value = -log10f(r / ref);
-      } else {
-        value = sample[i]; // raw (reference, explicit raw mode, or fluorescence)
-      }
-
-      sum[i]   += value;
+      // The average is taken on the raw intensity; -log10(I/I0) is applied to
+      // the MEAN afterwards. (Averaging per-sample logs biases noisy/low
+      // signals, and a zero reading used to be silently replaced by 1.0.)
+      sum[i]   += sample[i];
       count[i] += 1;
-      sample[i] = value; // so the progress callback reports the same value we're averaging
+
+      if (useLog) { // live display only
+        sample[i] = (sample[i] > 0.0f) ? -log10f(sample[i] / referenceValues[i]) : NAN;
+      }
     }
 
     if (onProgress) onProgress((millis() - startTime) / 1000.0f, sampleCount, sample);
@@ -107,14 +127,35 @@ bool run(bool isReference, ProgressCallback onProgress, float* avgOut, bool* use
     return false;
   }
 
+  // Pass 1: compute and validate everything BEFORE touching the stored
+  // reference, so a failed run can never leave a half-overwritten reference.
   for (uint8_t i = 0; i < n && i < MAX_CHANNELS; i++) {
     if (!selectedChannels[i]) continue;
-    float avg = (count[i] > 0) ? (sum[i] / count[i]) : 0.0f;
-    avgOut[i] = avg;
-    if (isReference) referenceValues[i] = avg;
+    float meanRaw = (count[i] > 0) ? (sum[i] / count[i]) : 0.0f;
+    if (isReference && meanRaw <= 0.0f) {
+      g_error = F("Reference signal is zero on a selected channel. Raise gain/LED and try again.");
+      return false;
+    }
+    if (useLog) {
+      if (meanRaw <= 0.0f) {
+        g_error = F("Signal is zero on a selected channel: -log10 is undefined. Raise gain/LED.");
+        return false;
+      }
+      avgOut[i] = -log10f(meanRaw / referenceValues[i]);
+    } else {
+      avgOut[i] = meanRaw; // raw (reference, explicit raw mode, or fluorescence)
+    }
   }
 
-  if (isReference) referenceValid = true;
+  // Pass 2: commit.
+  if (isReference) {
+    for (uint8_t i = 0; i < MAX_CHANNELS; i++) {
+      refChannels[i] = selectedChannels[i];
+      if (selectedChannels[i] && i < n) referenceValues[i] = avgOut[i];
+    }
+    refSignature   = configSignature;
+    referenceValid = true;
+  }
   if (usedLogOut) *usedLogOut = useLog;
 
   return true;

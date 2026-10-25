@@ -40,6 +40,7 @@ class APDS9960Sensor : public SensorBase {
   uint8_t gainOptionCount() const override { return 4; }
   const __FlashStringHelper* gainOptionLabel(uint8_t idx) const override;
   void setGainIndex(uint8_t idx) override;
+  int16_t gainIndex() const override { return gainIdx_; }
 
   // setADCIntegrationTime(uint16_t iTimeMS) takes a direct millisecond value
   // (internally converted to the ATIME register via
@@ -49,6 +50,7 @@ class APDS9960Sensor : public SensorBase {
   TimeType timeType() const override { return TimeType::TIME_FORMULA; }
   const __FlashStringHelper* integrationFormula() const override;
   float integrationTimeMs() const override;
+  int32_t timeParamValue(uint8_t) const override { return itimeMs_; }
   uint8_t timeParamCount() const override { return 1; }
   const char* timeParamKey(uint8_t idx) const override;
   const __FlashStringHelper* timeParamLabel(uint8_t idx) const override;

@@ -295,3 +295,13 @@ th { color: var(--text-dim); font-weight: 700; text-transform: uppercase; font-s
 }
 .toast.error { background: #ff3b3b; color: #fff; }
 .toast.visible { opacity: 1; transform: translateY(0); }
+
+/* While the board is busy (applying config / 10 s measurement) every control is
+   locked: the firmware does not read Serial then, so clicks would overflow its
+   RX buffer and corrupt commands. */
+body.busy .channel-chip,
+body.busy .mode-tab,
+body.busy .submode-tab { pointer-events: none; opacity: 0.55; }
+body.busy select:disabled,
+body.busy input:disabled,
+body.busy button:disabled { cursor: not-allowed; }

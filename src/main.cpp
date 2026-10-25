@@ -23,6 +23,7 @@
 constexpr uint8_t LINE_BUFFER_SIZE = 96;
 char    lineBuffer[LINE_BUFFER_SIZE];
 uint8_t lineLen = 0;
+bool    lineOverflow = false; // true while discarding the rest of an over-long line
 
 // I2C diagnostics: lines beginning with # are informational and are ignored
 // by the browser interface (it only parses JSON lines).
@@ -125,14 +126,24 @@ void loop() {
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n') {
-      lineBuffer[lineLen] = '\0';
-      if (lineLen > 0) Protocol::handleCommand(lineBuffer);
+      if (lineOverflow) {
+        // The whole over-long line has now been discarded up to its newline.
+        // (Resetting lineLen on overflow but KEEPING to read the tail used to
+        // turn that tail into a bogus "command" -> spurious "Invalid JSON".)
+        Serial.print(F("{\"evt\":\"error\",\"msg\":\"Command too long\"}\n"));
+        lineOverflow = false;
+      } else {
+        lineBuffer[lineLen] = '\0';
+        if (lineLen > 0) Protocol::handleCommand(lineBuffer);
+      }
       lineLen = 0;
     } else if (c != '\r') {
-      if (lineLen < LINE_BUFFER_SIZE - 1) {
+      if (lineOverflow) {
+        // keep discarding until the newline
+      } else if (lineLen < LINE_BUFFER_SIZE - 1) {
         lineBuffer[lineLen++] = c;
       } else {
-        // Line too long for the buffer: drop it instead of overrunning memory
+        lineOverflow = true;
         lineLen = 0;
       }
     }
