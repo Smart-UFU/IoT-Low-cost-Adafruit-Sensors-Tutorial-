@@ -149,6 +149,7 @@ static void sendAck(const char* cmd, float tintMs = -1) {
 // -----------------------------------------------------------------------------
 static int     g_ledMA  = 20;
 static uint8_t g_ledIdx = 0;
+static bool    g_ledOn  = true;   // LED_BINARY: remembered even while not in Reflectance
 
 void syncOutputsForMode() {
   SensorBase& sensor = SensorManager::get();
@@ -157,9 +158,11 @@ void syncOutputsForMode() {
     digitalWrite(PIN_LED_ABSORBANCE, LOW);
     digitalWrite(PIN_LED_FLUORESCENCE, LOW);
     switch (sensor.ledType()) {
-      case LedType::LED_CONTINUOUS: sensor.setLedContinuous(g_ledMA); sensor.setLedOn(true); break;
+      case LedType::LED_CONTINUOUS:
+        g_ledMA = constrain(g_ledMA, sensor.ledMinMA(), sensor.ledMaxMA());
+        sensor.setLedContinuous(g_ledMA); sensor.setLedOn(true); break;
       case LedType::LED_DISCRETE:   sensor.setLedDiscrete(g_ledIdx);  sensor.setLedOn(true); break;
-      case LedType::LED_BINARY:     sensor.setLedOn(true);                                    break;
+      case LedType::LED_BINARY:     sensor.setLedOn(g_ledOn);                                 break;
       case LedType::LED_NONE:       break; // shouldn't be reachable from the UI
     }
   } else if (Measurement::mode == Measurement::Mode::ABSORBANCE) {
@@ -229,11 +232,17 @@ void sendInfo() {
       printQuoted(sensor.gainOptionLabel(i));
     }
     Serial.print(']');
+    if (sensor.gainIndex() >= 0) {       // gain actually programmed at boot
+      Serial.print(F(",\"current\":"));
+      Serial.print(sensor.gainIndex());
+    }
   } else {
     Serial.print(F("\"type\":\"continuous\",\"min\":"));
     Serial.print(sensor.gainContinuousMin());
     Serial.print(F(",\"max\":"));
     Serial.print(sensor.gainContinuousMax());
+    Serial.print(F(",\"current\":"));
+    Serial.print(sensor.gainContinuousValue());
   }
   Serial.print('}');
 
@@ -244,7 +253,8 @@ void sendInfo() {
       Serial.print(F("\"type\":\"none\""));
       break;
     case LedType::LED_BINARY:
-      Serial.print(F("\"type\":\"binary\""));
+      Serial.print(F("\"type\":\"binary\",\"current\":"));
+      Serial.print(g_ledOn ? 1 : 0);
       break;
     case LedType::LED_DISCRETE:
       Serial.print(F("\"type\":\"discrete\",\"options\":["));
@@ -252,13 +262,16 @@ void sendInfo() {
         if (i) Serial.print(',');
         printQuoted(sensor.ledOptionLabel(i));
       }
-      Serial.print(']');
+      Serial.print(F("],\"current\":"));
+      Serial.print(g_ledIdx);
       break;
     case LedType::LED_CONTINUOUS:
       Serial.print(F("\"type\":\"continuous\",\"minMA\":"));
       Serial.print(sensor.ledMinMA());
       Serial.print(F(",\"maxMA\":"));
       Serial.print(sensor.ledMaxMA());
+      Serial.print(F(",\"current\":"));
+      Serial.print(g_ledMA);
       break;
   }
   Serial.print(F("},\"absorbance\":{\"type\":\"external\",\"pin\":"));
@@ -286,6 +299,8 @@ void sendInfo() {
       Serial.print(sensor.timeParamMin(i));
       Serial.print(F(",\"max\":"));
       Serial.print(sensor.timeParamMax(i));
+      Serial.print(F(",\"value\":"));
+      Serial.print(sensor.timeParamValue(i));
       Serial.print('}');
     }
     Serial.print(']');
@@ -296,6 +311,10 @@ void sendInfo() {
       printQuoted(sensor.timePresetLabel(i));
     }
     Serial.print(']');
+    if (sensor.timePresetIndex() >= 0) {
+      Serial.print(F(",\"current\":"));
+      Serial.print(sensor.timePresetIndex());
+    }
   }
   Serial.print('}');
 
@@ -321,6 +340,10 @@ void sendInfo() {
         Serial.print(ep.numMin);
         Serial.print(F(",\"max\":"));
         Serial.print(ep.numMax);
+      }
+      if (sensor.extraParamValue(i) >= 0) {
+        Serial.print(F(",\"current\":"));
+        Serial.print(sensor.extraParamValue(i));
       }
       Serial.print('}');
     }
@@ -367,7 +390,31 @@ static void onProgress(float elapsedSec, int sampleCount, const float* sampleVal
   Serial.print(F("}\n"));
 }
 
+// FNV-1a over every setting that changes the signal level (see
+// Measurement::configSignature).
+static uint32_t fnvMix(uint32_t h, uint32_t v) {
+  for (uint8_t i = 0; i < 4; i++) { h ^= (v & 0xFF); h *= 16777619UL; v >>= 8; }
+  return h;
+}
+static uint32_t computeConfigSignature() {
+  SensorBase& s = SensorManager::get();
+  uint32_t h = 2166136261UL;
+  h = fnvMix(h, (uint32_t)Measurement::mode);
+  h = fnvMix(h, (uint32_t)(int32_t)s.gainIndex());
+  h = fnvMix(h, (uint32_t)(int32_t)(s.gainContinuousValue() * 100.0f));
+  for (uint8_t i = 0; i < s.timeParamCount(); i++) h = fnvMix(h, (uint32_t)s.timeParamValue(i));
+  h = fnvMix(h, (uint32_t)(int32_t)s.timePresetIndex());
+  for (uint8_t i = 0; i < s.extraParamCount(); i++) h = fnvMix(h, (uint32_t)s.extraParamValue(i));
+  if (Measurement::mode == Measurement::Mode::REFLECTANCE) { // internal LED only matters here
+    h = fnvMix(h, (uint32_t)g_ledMA);
+    h = fnvMix(h, (uint32_t)g_ledIdx);
+    h = fnvMix(h, g_ledOn ? 1u : 0u);
+  }
+  return h;
+}
+
 static void runAndSendMeasurement(bool isReference) {
+  Measurement::configSignature = computeConfigSignature();
   float avg[Measurement::MAX_CHANNELS];
   bool usedLog = false;
 
@@ -397,6 +444,16 @@ static void runAndSendMeasurement(bool isReference) {
   if (!isReference) {
     Serial.print(F(",\"tint_ms\":"));
     printNum(sensor.integrationTimeMs());
+    // Gain the chip really used (read back from the driver, not from the UI).
+    if (sensor.gainType() == GainType::GAIN_DISCRETE) {
+      if (sensor.gainIndex() >= 0) {
+        Serial.print(F(",\"gain_idx\":"));
+        Serial.print(sensor.gainIndex());
+      }
+    } else {
+      Serial.print(F(",\"gain_val\":"));
+      Serial.print(sensor.gainContinuousValue());
+    }
   }
   Serial.print(F("}\n"));
 }
@@ -418,8 +475,12 @@ void handleCommand(const char* line) {
   if (strcmp(cmd, "get_info") == 0) {
     sendInfo();
 
+  // Every setter validates BEFORE it changes anything: a missing field, a wrong
+  // type or an out-of-range value is an error reply, never a silent "0"/clamp
+  // (that used to turn a truncated command into "set gain index 0").
   } else if (strcmp(cmd, "set_mode") == 0) {
-    const char* m = doc["mode"] | "reflectance";
+    const char* m = doc["mode"] | (const char*)nullptr;
+    if (!m) { sendError(F("Missing field: mode")); return; }
     if      (strcmp(m, "reflectance")  == 0) Measurement::setMode(Measurement::Mode::REFLECTANCE);
     else if (strcmp(m, "absorbance")   == 0) Measurement::setMode(Measurement::Mode::ABSORBANCE);
     else if (strcmp(m, "fluorescence") == 0) Measurement::setMode(Measurement::Mode::FLUORESCENCE);
@@ -428,31 +489,37 @@ void handleCommand(const char* line) {
     sendAck("set_mode");
 
   } else if (strcmp(cmd, "set_submode") == 0) {
-    const char* s = doc["sub"] | "raw";
-    Measurement::setSubmode(strcmp(s, "log") == 0 ? Measurement::Submode::LOG : Measurement::Submode::RAW);
+    const char* s = doc["sub"] | (const char*)nullptr;
+    if (!s) { sendError(F("Missing field: sub")); return; }
+    if      (strcmp(s, "log") == 0) Measurement::setSubmode(Measurement::Submode::LOG);
+    else if (strcmp(s, "raw") == 0) Measurement::setSubmode(Measurement::Submode::RAW);
+    else { sendError(F("Unknown submode")); return; }
     sendAck("set_submode");
 
   } else if (strcmp(cmd, "set_led") == 0) {
     switch (sensor.ledType()) {
       case LedType::LED_BINARY: {
-        bool on = doc["on"] | false;
+        if (!doc["on"].is<bool>()) { sendError(F("Missing field: on")); return; }
+        bool on = doc["on"].as<bool>();
+        g_ledOn = on;
         if (Measurement::mode == Measurement::Mode::REFLECTANCE) sensor.setLedOn(on);
         break;
       }
       case LedType::LED_DISCRETE: {
-        int idx = doc["idx"] | 0;
-        if (idx >= 0 && idx < sensor.ledOptionCount()) {
-          g_ledIdx = (uint8_t)idx;
-          if (Measurement::mode == Measurement::Mode::REFLECTANCE) {
-            sensor.setLedDiscrete(g_ledIdx);
-            sensor.setLedOn(true);
-          }
+        if (!doc["idx"].is<int>()) { sendError(F("Missing field: idx")); return; }
+        int idx = doc["idx"].as<int>();
+        if (idx < 0 || idx >= sensor.ledOptionCount()) { sendError(F("LED option out of range")); return; }
+        g_ledIdx = (uint8_t)idx;
+        if (Measurement::mode == Measurement::Mode::REFLECTANCE) {
+          sensor.setLedDiscrete(g_ledIdx);
+          sensor.setLedOn(true);
         }
         break;
       }
       case LedType::LED_CONTINUOUS: {
-        int mA = doc["current"] | sensor.ledMinMA();
-        mA = constrain(mA, sensor.ledMinMA(), sensor.ledMaxMA());
+        if (!doc["current"].is<int>()) { sendError(F("Missing field: current")); return; }
+        int mA = doc["current"].as<int>();
+        if (mA < sensor.ledMinMA() || mA > sensor.ledMaxMA()) { sendError(F("LED current out of range")); return; }
         g_ledMA = mA;
         if (Measurement::mode == Measurement::Mode::REFLECTANCE) {
           sensor.setLedContinuous(g_ledMA);
@@ -468,12 +535,14 @@ void handleCommand(const char* line) {
 
   } else if (strcmp(cmd, "set_gain") == 0) {
     if (sensor.gainType() == GainType::GAIN_DISCRETE) {
-      int idx = doc["idx"] | 0;
+      if (!doc["idx"].is<int>()) { sendError(F("Missing field: idx")); return; }
+      int idx = doc["idx"].as<int>();
       if (idx < 0 || idx >= sensor.gainOptionCount()) { sendError(F("Gain out of range")); return; }
       sensor.setGainIndex((uint8_t)idx);
     } else {
-      float v = doc["value"] | sensor.gainContinuousMin();
-      v = constrain(v, sensor.gainContinuousMin(), sensor.gainContinuousMax());
+      if (!doc["value"].is<float>()) { sendError(F("Missing field: value")); return; }
+      float v = doc["value"].as<float>();
+      if (v < sensor.gainContinuousMin() || v > sensor.gainContinuousMax()) { sendError(F("Gain out of range")); return; }
       sensor.setGainContinuous(v);
     }
     sendAck("set_gain");
@@ -481,34 +550,52 @@ void handleCommand(const char* line) {
   } else if (strcmp(cmd, "set_time") == 0) {
     if (sensor.timeType() == TimeType::TIME_FORMULA) {
       JsonObject params = doc["params"];
+      if (params.isNull()) { sendError(F("Missing field: params")); return; }
+      // validate every supplied parameter first, then apply
+      uint8_t supplied = 0;
       for (uint8_t i = 0; i < sensor.timeParamCount(); i++) {
         const char* key = sensor.timeParamKey(i);
-        if (params.containsKey(key)) {
-          int32_t v = params[key].as<int32_t>();
-          v = constrain(v, sensor.timeParamMin(i), sensor.timeParamMax(i));
-          sensor.setTimeParam(i, v);
-        }
+        if (!params.containsKey(key)) continue;
+        if (!params[key].is<long>()) { sendError(F("Time parameter must be a number")); return; }
+        long v = params[key].as<long>();
+        if (v < sensor.timeParamMin(i) || v > sensor.timeParamMax(i)) { sendError(F("Time parameter out of range")); return; }
+        supplied++;
+      }
+      if (supplied == 0) { sendError(F("No known time parameter supplied")); return; }
+      for (uint8_t i = 0; i < sensor.timeParamCount(); i++) {
+        const char* key = sensor.timeParamKey(i);
+        if (params.containsKey(key)) sensor.setTimeParam(i, (int32_t)params[key].as<long>());
       }
     } else {
-      int idx = doc["preset"] | 0;
+      if (!doc["preset"].is<int>()) { sendError(F("Missing field: preset")); return; }
+      int idx = doc["preset"].as<int>();
       if (idx < 0 || idx >= sensor.timePresetCount()) { sendError(F("Preset out of range")); return; }
       sensor.setTimePreset((uint8_t)idx);
     }
     sendAck("set_time", sensor.integrationTimeMs());
 
   } else if (strcmp(cmd, "set_channels") == 0) {
-    Measurement::clearChannelSelection();
     JsonArray arr = doc["channels"];
-    for (JsonVariant v : arr) {
+    if (arr.isNull()) { sendError(F("Missing field: channels")); return; }
+    for (JsonVariant v : arr) {                       // validate all first...
+      if (!v.is<int>()) { sendError(F("Channel must be a number")); return; }
       int idx = v.as<int>();
-      if (idx >= 0 && idx < sensor.channelCount()) Measurement::selectChannel((uint8_t)idx);
+      if (idx < 0 || idx >= sensor.channelCount()) { sendError(F("Channel out of range")); return; }
     }
+    Measurement::clearChannelSelection();             // ...then apply
+    for (JsonVariant v : arr) Measurement::selectChannel((uint8_t)v.as<int>());
     sendAck("set_channels");
 
   } else if (strcmp(cmd, "set_extra") == 0) {
-    int idx = doc["idx"] | -1;
-    int value = doc["value"] | 0;
+    if (!doc["idx"].is<int>())   { sendError(F("Missing field: idx"));   return; }
+    if (!doc["value"].is<int>()) { sendError(F("Missing field: value")); return; }
+    int idx   = doc["idx"].as<int>();
+    int value = doc["value"].as<int>();
     if (idx < 0 || idx >= sensor.extraParamCount()) { sendError(F("Unknown extra param")); return; }
+    ExtraParamInfo ep = sensor.extraParam((uint8_t)idx);
+    bool ok = ep.options ? (value >= 0 && value < ep.optionCount)
+                         : (value >= ep.numMin && value <= ep.numMax);
+    if (!ok) { sendError(F("Extra value out of range")); return; }
     sensor.setExtraParam((uint8_t)idx, value);
     sendAck("set_extra");
 

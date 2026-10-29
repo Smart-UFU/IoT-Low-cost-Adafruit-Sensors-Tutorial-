@@ -146,9 +146,56 @@ One JSON object per line (`\n`-terminated), both directions.
 {"evt":"ack","cmd":"...", "tint_ms":...}   // tint_ms only present after set_time
 {"evt":"progress","t":1.2,"n":3,"data":{"0":123.4}}
 {"evt":"ref_saved","data":{"0":512.0}}
-{"evt":"result","mode":"...","sub":"...","data":{...},"gain":"...","tint_ms":...}
+{"evt":"result","mode":"...","sub":"...","data":{...},"tint_ms":...,"gain_idx":4}   // gain_val for continuous gain
 {"evt":"error","msg":"..."}
 ```
+
+**Flow control (important).** The board answers *every* command with exactly one
+`ack`, `error` (or `info` / `result` / `ref_saved`). The page sends **one command
+at a time and waits for that answer** before the next, and locks every control
+while a measurement runs: the firmware does not read Serial during the 10 s
+sampling loop, and an Uno's RX buffer is only 64 bytes, so commands fired
+back-to-back were truncated/merged (`Invalid JSON`) and settings were lost.
+`info.gain.current` is the gain the chip is *actually* using at boot, and every
+`result` echoes the gain it was measured with (`gain_idx` / `gain_val`), so the
+gain column in the table/Excel always comes from the board, not from a dropdown.
+
+**Real state on connect.** `info` also reports what the chip is actually using, so
+the page opens on those values instead of on option 0 / the minimum:
+`time.params[].value` (ATIME/ASTEP, integration step...), `time.current` (preset
+index), `extraParams[].current`, and `led.internal.current` (mA, index or on/off).
+Every driver implements `timeParamValue()`, `timePresetIndex()` and
+`extraParamValue()` from its own stored state (see `SensorBase.h`).
+
+**Settling window.** Free-running sensors may return one or two results produced
+with the previous gain/time right after a change. `Measurement::run` reads but
+discards everything during `SensorBase::settleMs()` (default 2x integration time,
+max 3 s) so those samples never enter the average.
+
+**Export.** CSV/Excel rows carry: timestamp, mode, gain, tint_ms, time config
+(e.g. `ATIME=100; ASTEP=999`), LED, sensor extras, whether a reference was used,
+then the channels.
+
+**Reference validity (`-log10 I/I0`).** A reference is stored together with a
+fingerprint of gain, integration time, sensor extras, internal LED (Reflectance)
+and mode, plus the channels it covers. A log measurement is refused with an
+explicit error if any of them differs, so going gain A -> B -> A is valid again
+but A -> B is not silently accepted. The page checks the same thing before
+sending anything.
+
+**Log maths.** The mean intensity over the 10 s is computed first and
+`-log10(mean / reference)` is applied to that mean. A zero signal or a zero
+reference is an error ("raise gain/LED"), never a silent replacement by 1.0.
+
+**Strict commands.** Every `set_*` command validates before changing anything: a
+missing field, wrong type or out-of-range value returns `{"evt":"error",...}`
+instead of being treated as 0 / clamped. `set_channels` is all-or-nothing.
+
+**Several sensors in one session.** Results remember which sensor produced them.
+After reconnecting a different sensor the older rows are kept in memory but not
+drawn (or exported) under the new sensor's columns. Channel names that depend on
+an extra (LTR390 ALS/UV) refresh in place; rows measured under another name carry
+a warning marker and a `channels_as` column in the export.
 
 ### The "info" schema — this is what makes one frontend work for 11 sensors
 

@@ -21,9 +21,11 @@ class TSL2591Sensor : public SensorBase {
   uint8_t gainOptionCount() const override { return 4; }
   const __FlashStringHelper* gainOptionLabel(uint8_t idx) const override;
   void setGainIndex(uint8_t idx) override;
+  int16_t gainIndex() const override { return gainIdx_; }
 
   TimeType timeType() const override { return TimeType::TIME_PRESETS; }
   float integrationTimeMs() const override;
+  int16_t timePresetIndex() const override { return timeIdx_; }
   uint8_t timePresetCount() const override { return 6; }
   const __FlashStringHelper* timePresetLabel(uint8_t idx) const override;
   void setTimePreset(uint8_t idx) override;

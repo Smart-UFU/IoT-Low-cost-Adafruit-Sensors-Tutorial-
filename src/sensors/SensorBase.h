@@ -79,6 +79,12 @@ class SensorBase {
   virtual float gainContinuousMin() const { return 0; }
   virtual float gainContinuousMax() const { return 0; }
   virtual void setGainContinuous(float value) {}
+  // Gain the driver has ACTUALLY programmed right now. The web page uses these
+  // to show the real gain on connect and the firmware echoes them in every
+  // "result", so the gain recorded next to a measurement can never drift from
+  // the gain the chip really used. -1 / 0 = driver does not report it.
+  virtual int16_t gainIndex() const { return -1; }       // GAIN_DISCRETE sensors
+  virtual float gainContinuousValue() const { return 0; } // GAIN_CONTINUOUS sensors
 
   // ---- Integration time ----
   virtual TimeType timeType() const = 0;
@@ -98,11 +104,14 @@ class SensorBase {
   virtual int32_t timeParamMin(uint8_t idx) const { return 0; }
   virtual int32_t timeParamMax(uint8_t idx) const { return 0; }
   virtual void setTimeParam(uint8_t idx, int32_t value) {}
+  // Value the driver has ACTUALLY programmed (same units as timeParamMin/Max).
+  virtual int32_t timeParamValue(uint8_t idx) const { return 0; }
 
   // TIME_PRESETS mode (fixed named list, each with a known ms value)
   virtual uint8_t timePresetCount() const { return 0; }
   virtual const __FlashStringHelper* timePresetLabel(uint8_t idx) const { return nullptr; }
   virtual void setTimePreset(uint8_t idx) {}
+  virtual int16_t timePresetIndex() const { return -1; } // preset actually programmed, -1 = unknown
 
   // ---- LED ----
   virtual LedType ledType() const = 0;
@@ -118,4 +127,19 @@ class SensorBase {
   virtual uint8_t extraParamCount() const { return 0; }
   virtual ExtraParamInfo extraParam(uint8_t idx) const { return {}; }
   virtual void setExtraParam(uint8_t idx, int value) {}
+  virtual int32_t extraParamValue(uint8_t idx) const { return -1; } // value actually programmed, -1 = unknown
+
+  // ---- Settling ----
+  // After a gain / integration-time / LED change, free-running sensors can still
+  // hand back one or two results produced with the OLD setting (the conversion
+  // that was already in flight, or the last latched register value). The
+  // measurement loop discards everything read during this window instead of
+  // averaging it in. Default: two integration times, capped at 3 s. Override
+  // only if a driver knows better.
+  virtual uint16_t settleMs() const {
+    float ms = integrationTimeMs() * 2.0f;
+    if (!(ms > 0.0f)) return 0;
+    if (ms > 3000.0f) ms = 3000.0f;
+    return (uint16_t)ms;
+  }
 };

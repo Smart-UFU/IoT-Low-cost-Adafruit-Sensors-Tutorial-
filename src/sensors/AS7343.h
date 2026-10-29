@@ -17,10 +17,12 @@ class AS7343Sensor : public SensorBase {
   uint8_t gainOptionCount() const override { return 13; }
   const __FlashStringHelper* gainOptionLabel(uint8_t idx) const override;
   void setGainIndex(uint8_t idx) override;
+  int16_t gainIndex() const override { return gainIdx_; }
 
   TimeType timeType() const override { return TimeType::TIME_FORMULA; }
   const __FlashStringHelper* integrationFormula() const override;
   float integrationTimeMs() const override;
+  int32_t timeParamValue(uint8_t idx) const override { return idx == 0 ? atime_ : astep_; }
   uint8_t timeParamCount() const override { return 2; }
   const char* timeParamKey(uint8_t idx) const override;
   const __FlashStringHelper* timeParamLabel(uint8_t idx) const override;
